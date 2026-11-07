@@ -1,2 +1,172 @@
-if ("serviceWorker" in navigator) { window.addEventListener("load", () => navigator.serviceWorker.register("./sw.js").catch(()=>{})); }
-document.getElementById("add").addEventListener("click",()=>alert("سنفعّل إضافة الأجهزة والربط الآمن في الخطوة التالية."));
+
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("./sw.js").catch(() => {});
+  });
+}
+
+const addButton = document.getElementById("add");
+const deviceName = document.querySelector(".device-name small");
+const deviceStatus = document.querySelector(".offline");
+const metrics = document.querySelectorAll(".metrics > div b");
+const hint = document.querySelector(".hint");
+const headerStatus = document.querySelector("header .status");
+
+let connection = null;
+let refreshTimer = null;
+
+function showMessage(message) {
+  hint.textContent = message;
+}
+
+function setConnected(connected) {
+  deviceStatus.textContent = connected ? "متصل" : "غير متصل";
+  headerStatus.textContent = connected
+    ? "● متصل بالكمبيوتر"
+    : "● بانتظار الاتصال";
+}
+
+function formatGB(value) {
+  return Number(value).toFixed(1) + " GB";
+}
+
+function displayData(data) {
+  const disks = data.disks || [];
+  const total = disks.reduce((s, d) => s + d.totalGb, 0);
+  const used = disks.reduce((s, d) => s + d.usedGb, 0);
+
+  metrics[0].textContent = data.processor || "غير معروف";
+  metrics[1].textContent = data.memoryUsedPercent + "% مستخدم";
+  metrics[2].textContent = disks.length
+    ? formatGB(used) + " / " + formatGB(total)
+    : "غير متاح";
+
+  deviceName.textContent = data.deviceName;
+
+  showMessage(
+    "نظام التشغيل: " + data.os +
+    " · عدد أنوية المعالج: " + data.processorCount +
+    " · آخر تحديث: " +
+    new Date(data.collectedAt).toLocaleTimeString("ar-SA")
+  );
+
+  setConnected(true);
+}
+
+async function refreshData() {
+  if (!connection) return;
+
+  try {
+    const response = await fetch(
+      connection.url + "/api/status",
+      {
+        headers: { "X-Mirah-Token": connection.token },
+        cache: "no-store"
+      }
+    );
+
+    if (!response.ok) throw new Error("تعذر قراءة البيانات");
+
+    const data = await response.json();
+    displayData(data);
+
+  } catch (error) {
+    setConnected(false);
+    showMessage("تعذر الاتصال. تأكد من تشغيل الكمبيوتر وTailscale.");
+  }
+}
+
+async function pairDevice() {
+  const previous = connection?.url ||
+    "https://sarah.taild04dd4.ts.net";
+
+  const input = prompt(
+    "أدخل رابط الكمبيوتر الخاص عبر Tailscale:",
+    previous
+  );
+
+  if (!input) return;
+
+  let url;
+
+  try {
+    const parsed = new URL(input.trim());
+
+    if (
+      parsed.protocol !== "https:" ||
+      !parsed.hostname.endsWith(".ts.net") ||
+      parsed.username ||
+      parsed.password
+    ) {
+      throw new Error("رابط غير صالح");
+    }
+
+    url = parsed.origin;
+
+  } catch {
+    alert("أدخل رابط Tailscale صحيحًا يبدأ بـ https://");
+    return;
+  }
+
+  addButton.disabled = true;
+  addButton.textContent = "جارٍ الربط...";
+  showMessage("جارٍ الاتصال بالكمبيوتر...");
+
+  try {
+    const response = await fetch(
+      url + "/api/pairing",
+      { cache: "no-store" }
+    );
+
+    if (!response.ok) throw new Error("تعذر الوصول للكمبيوتر");
+
+    const pairing = await response.json();
+
+    if (!pairing.token) throw new Error("بيانات الربط غير مكتملة");
+
+    connection = { url, token: pairing.token };
+
+    await refreshData();
+
+    if (deviceStatus.textContent !== "متصل") {
+      throw new Error("فشل التحقق من بيانات الجهاز");
+    }
+
+    localStorage.setItem(
+      "mirah_connection",
+      JSON.stringify(connection)
+    );
+
+    addButton.textContent = "تحديث البيانات";
+
+    if (refreshTimer) clearInterval(refreshTimer);
+    refreshTimer = setInterval(refreshData, 15000);
+
+  } catch (error) {
+    connection = null;
+    setConnected(false);
+    showMessage("فشل الربط: " + error.message);
+    alert("لم يكتمل الربط. تأكد من تشغيل برنامج الكمبيوتر وTailscale.");
+    addButton.textContent = "＋ ربط جهاز";
+
+  } finally {
+    addButton.disabled = false;
+  }
+}
+
+addButton.addEventListener("click", pairDevice);
+
+try {
+  const saved = JSON.parse(
+    localStorage.getItem("mirah_connection") || "null"
+  );
+
+  if (saved?.url && saved?.token) {
+    connection = saved;
+    addButton.textContent = "تحديث البيانات";
+    refreshData();
+    refreshTimer = setInterval(refreshData, 15000);
+  }
+} catch {
+  localStorage.removeItem("mirah_connection");
+}
