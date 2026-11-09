@@ -5,92 +5,321 @@ if ("serviceWorker" in navigator) {
   });
 }
 
-const addButton = document.getElementById("add");
-const deviceName = document.querySelector(".device-name small");
-const deviceStatus = document.querySelector(".offline");
-const metrics = document.querySelectorAll(".metrics > div b");
-const hint = document.querySelector(".hint");
-const headerStatus = document.querySelector("header .status");
+const $ = (selector) => document.querySelector(selector);
 
-let connection = null;
-let refreshTimer = null;
+const addButton = $("#add");
+const urlInput = $("#deviceUrl");
+const nameInput = $("#customDeviceName");
+const addMessage = $("#addMessage");
+const devicesList = $("#devicesList");
+const alertsList = $("#alertsList");
+const deviceCount = $("#deviceCount");
+const alertCount = $("#alertCount");
+const headerStatus = $("header .status");
 
-function showMessage(message) {
-  hint.textContent = message;
+const STORAGE_KEY = "mirah_devices";
+const OLD_KEY = "mirah_connection";
+
+let devices = [];
+let alerts = [];
+
+function saveDevices() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(
+    devices.map(({ url, token, id, name }) => ({
+      url, token, id, name
+    }))
+  ));
 }
 
-function setConnected(connected) {
-  deviceStatus.textContent = connected ? "متصل" : "غير متصل";
-  headerStatus.textContent = connected
-    ? "● متصل بالكمبيوتر"
-    : "● بانتظار الاتصال";
+function loadDevices() {
+  try {
+    const saved = JSON.parse(
+      localStorage.getItem(STORAGE_KEY) || "[]"
+    );
+
+    if (Array.isArray(saved)) devices = saved;
+  } catch {
+    devices = [];
+  }
+
+  // ترحيل الجهاز القديم تلقائياً
+  if (!devices.length) {
+    try {
+      const old = JSON.parse(
+        localStorage.getItem(OLD_KEY) || "null"
+      );
+
+      if (old?.url && old?.token) {
+        devices.push({
+          url: old.url,
+          token: old.token,
+          id: old.url,
+          name: "جهاز الكمبيوتر"
+        });
+        saveDevices();
+      }
+    } catch {}
+  }
+}
+
+function showMessage(message) {
+  addMessage.textContent = message;
+}
+
+function makeElement(tag, className, content) {
+  const element = document.createElement(tag);
+  if (className) element.className = className;
+  if (content !== undefined) element.textContent = content;
+  return element;
 }
 
 function formatGB(value) {
   return Number(value).toFixed(1) + " GB";
 }
 
-function displayData(data) {
-  const disks = data.disks || [];
-  const total = disks.reduce((s, d) => s + d.totalGb, 0);
-  const used = disks.reduce((s, d) => s + d.usedGb, 0);
+function getDeviceAlerts(device) {
+  const result = [];
 
-  metrics[0].textContent = data.processor || "غير معروف";
-  metrics[1].textContent = data.memoryUsedPercent + "% مستخدم";
-  metrics[2].textContent = disks.length
-    ? formatGB(used) + " / " + formatGB(total)
-    : "غير متاح";
+  if (!device.online) {
+    result.push({
+      level: "danger",
+      title: "الجهاز غير متصل",
+      details: "تعذر الاتصال بهذا الجهاز."
+    });
+    return result;
+  }
 
-  deviceName.textContent = data.deviceName;
+  const data = device.data;
+  if (!data) return result;
 
-  showMessage(
-    "نظام التشغيل: " + data.os +
-    " · عدد أنوية المعالج: " + data.processorCount +
-    " · آخر تحديث: " +
-    new Date(data.collectedAt).toLocaleTimeString("ar-SA")
-  );
+  if (Number(data.memoryUsedPercent) >= 90) {
+    result.push({
+      level: "warning",
+      title: "استهلاك الذاكرة مرتفع",
+      details: "استخدام RAM وصل إلى " +
+        data.memoryUsedPercent + "%."
+    });
+  }
 
-  setConnected(true);
+  for (const disk of data.disks || []) {
+    if (Number(disk.usedPercent) >= 90) {
+      result.push({
+        level: "warning",
+        title: "مساحة التخزين شبه ممتلئة",
+        details: disk.name + " مستخدم بنسبة " +
+          disk.usedPercent + "%."
+      });
+    }
+  }
+
+  return result;
 }
 
-async function refreshData() {
-  if (!connection) return;
+function renderDevices() {
+  devicesList.replaceChildren();
 
+  deviceCount.textContent = devices.length + " أجهزة";
+
+  if (!devices.length) {
+    const empty = makeElement("div", "notice");
+    empty.append(
+      makeElement("b", "", "لا توجد أجهزة مربوطة"),
+      makeElement("p", "", "انتقل إلى واجهة إضافة جهاز لربط أول كمبيوتر.")
+    );
+    devicesList.append(empty);
+    return;
+  }
+
+  devices.forEach((device, index) => {
+    const card = makeElement("div", "device");
+    const top = makeElement("div", "device-top");
+
+    top.append(
+      makeElement("div", "pc-icon", "▣")
+    );
+
+    const nameBox = makeElement("div", "device-name");
+    nameBox.append(
+      makeElement("b", "", device.name),
+      makeElement("small", "",
+        device.data?.deviceName || device.url)
+    );
+
+    top.append(nameBox);
+
+    const badge = makeElement(
+      "span",
+      device.online ? "online" : "offline",
+      device.online ? "متصل" : "غير متصل"
+    );
+
+    top.append(badge);
+    card.append(top);
+
+    if (device.data) {
+      const data = device.data;
+      const disks = data.disks || [];
+      const total = disks.reduce((sum, d) => sum + d.totalGb, 0);
+      const used = disks.reduce((sum, d) => sum + d.usedGb, 0);
+
+      const metrics = makeElement("div", "metrics");
+
+      const values = [
+        ["المعالج", data.processor || "غير معروف"],
+        ["الذاكرة RAM", data.memoryUsedPercent + "%"],
+        ["التخزين", disks.length
+          ? formatGB(used) + " / " + formatGB(total)
+          : "غير متاح"]
+      ];
+
+      values.forEach(([label, value]) => {
+        const box = makeElement("div");
+        box.append(
+          makeElement("small", "", label),
+          makeElement("b", "", value)
+        );
+        metrics.append(box);
+      });
+
+      card.append(metrics);
+    }
+
+    const info = makeElement(
+      "p",
+      "hint",
+      device.online
+        ? "آخر تحديث: " +
+          new Date(device.lastSeen).toLocaleTimeString("ar-SA")
+        : "تأكد من تشغيل الكمبيوتر وTailscale."
+    );
+
+    card.append(info);
+
+    const actions = makeElement("div", "device-actions");
+
+    const renameButton = makeElement("button", "secondary-action", "تغيير الاسم");
+    renameButton.addEventListener("click", () => renameDevice(index));
+
+    const deleteButton = makeElement("button", "delete-action", "حذف الجهاز");
+    deleteButton.addEventListener("click", () => deleteDevice(index));
+
+    actions.append(renameButton, deleteButton);
+    card.append(actions);
+
+    devicesList.append(card);
+  });
+}
+
+function renameDevice(index) {
+  const device = devices[index];
+  if (!device) return;
+
+  const newName = prompt("اكتب الاسم الجديد للجهاز:", device.name);
+
+  if (!newName || !newName.trim()) return;
+
+  device.name = newName.trim();
+  saveDevices();
+  renderDevices();
+}
+
+function deleteDevice(index) {
+  const device = devices[index];
+  if (!device) return;
+
+  if (!confirm("هل تريد حذف " + device.name + " من التطبيق؟")) {
+    return;
+  }
+
+  devices.splice(index, 1);
+  saveDevices();
+  renderDevices();
+  renderAlerts();
+  updateHeader();
+}
+
+function renderAlerts() {
+  alertsList.replaceChildren();
+
+  alerts = devices.flatMap(device =>
+    getDeviceAlerts(device).map(alert => ({
+      ...alert,
+      deviceName: device.name
+    }))
+  );
+
+  alertCount.textContent = alerts.length + " تنبيهات";
+
+  if (!alerts.length) {
+    const empty = makeElement("div", "notice");
+    empty.append(
+      makeElement("b", "", "كل الأجهزة بحالة جيدة"),
+      makeElement("p", "", "لا توجد مشاكل مكتشفة حاليًا.")
+    );
+    alertsList.append(empty);
+    return;
+  }
+
+  alerts.forEach(alert => {
+    const card = makeElement(
+      "div",
+      "alert-card " + alert.level
+    );
+
+    card.append(
+      makeElement("b", "", alert.title),
+      makeElement("div", "alert-device", "الجهاز: " + alert.deviceName),
+      makeElement("p", "", alert.details)
+    );
+
+    alertsList.append(card);
+  });
+}
+
+function updateHeader() {
+  const online = devices.filter(d => d.online).length;
+
+  headerStatus.textContent = devices.length
+    ? online + " من " + devices.length + " متصل"
+    : "لا توجد أجهزة";
+}
+
+async function refreshDevice(device) {
   try {
     const response = await fetch(
-      connection.url + "/api/status",
+      device.url + "/api/status",
       {
-        headers: { "X-Mirah-Token": connection.token },
+        headers: { "X-Mirah-Token": device.token },
         cache: "no-store"
       }
     );
 
-    if (!response.ok) throw new Error("تعذر قراءة البيانات");
+    if (!response.ok) throw new Error("Connection failed");
 
     const data = await response.json();
-    displayData(data);
 
-  } catch (error) {
-    setConnected(false);
-    showMessage("تعذر الاتصال. تأكد من تشغيل الكمبيوتر وTailscale.");
+    device.data = data;
+    device.online = true;
+    device.lastSeen = Date.now();
+
+  } catch {
+    device.online = false;
   }
+
+  renderDevices();
+  renderAlerts();
+  updateHeader();
+}
+
+async function refreshAll() {
+  await Promise.all(devices.map(refreshDevice));
 }
 
 async function pairDevice() {
-  const previous = connection?.url ||
-    "https://sarah.taild04dd4.ts.net";
-
-  const input = prompt(
-    "أدخل رابط الكمبيوتر الخاص عبر Tailscale:",
-    previous
-  );
-
-  if (!input) return;
-
   let url;
 
   try {
-    const parsed = new URL(input.trim());
+    const parsed = new URL(urlInput.value.trim());
 
     if (
       parsed.protocol !== "https:" ||
@@ -104,7 +333,12 @@ async function pairDevice() {
     url = parsed.origin;
 
   } catch {
-    alert("أدخل رابط Tailscale صحيحًا يبدأ بـ https://");
+    showMessage("أدخل رابط Tailscale صحيحًا يبدأ بـ https://");
+    return;
+  }
+
+  if (devices.some(d => d.url === url)) {
+    showMessage("هذا الجهاز موجود بالفعل في القائمة.");
     return;
   }
 
@@ -122,51 +356,75 @@ async function pairDevice() {
 
     const pairing = await response.json();
 
-    if (!pairing.token) throw new Error("بيانات الربط غير مكتملة");
-
-    connection = { url, token: pairing.token };
-
-    await refreshData();
-
-    if (deviceStatus.textContent !== "متصل") {
-      throw new Error("فشل التحقق من بيانات الجهاز");
+    if (!pairing.token) {
+      throw new Error("بيانات الربط غير مكتملة");
     }
 
-    localStorage.setItem(
-      "mirah_connection",
-      JSON.stringify(connection)
-    );
+    const device = {
+      url,
+      token: pairing.token,
+      id: pairing.id || url,
+      name: nameInput.value.trim() ||
+        pairing.name || "جهاز جديد",
+      online: false,
+      data: null,
+      lastSeen: null
+    };
 
-    addButton.textContent = "تحديث البيانات";
+    devices.push(device);
 
-    if (refreshTimer) clearInterval(refreshTimer);
-    refreshTimer = setInterval(refreshData, 15000);
+    await refreshDevice(device);
+
+    if (!device.online) {
+      devices.pop();
+      throw new Error("تعذر التحقق من اتصال الجهاز");
+    }
+
+    saveDevices();
+
+    urlInput.value = "";
+    nameInput.value = "";
+
+    showMessage("تم ربط الجهاز بنجاح.");
+    renderDevices();
+    renderAlerts();
+    updateHeader();
+
+    showPage("devicesPage");
 
   } catch (error) {
-    connection = null;
-    setConnected(false);
     showMessage("فشل الربط: " + error.message);
-    alert("لم يكتمل الربط. تأكد من تشغيل برنامج الكمبيوتر وTailscale.");
-    addButton.textContent = "＋ ربط جهاز";
-
   } finally {
     addButton.disabled = false;
+    addButton.textContent = "＋ ربط جهاز";
   }
 }
+
+function showPage(pageId) {
+  document.querySelectorAll(".page").forEach(page => {
+    page.classList.toggle("active", page.id === pageId);
+  });
+
+  document.querySelectorAll(".nav-item").forEach(button => {
+    button.classList.toggle(
+      "active",
+      button.dataset.page === pageId
+    );
+  });
+}
+
+document.querySelectorAll(".nav-item").forEach(button => {
+  button.addEventListener("click", () => {
+    showPage(button.dataset.page);
+  });
+});
 
 addButton.addEventListener("click", pairDevice);
 
-try {
-  const saved = JSON.parse(
-    localStorage.getItem("mirah_connection") || "null"
-  );
+loadDevices();
+renderDevices();
+renderAlerts();
+updateHeader();
 
-  if (saved?.url && saved?.token) {
-    connection = saved;
-    addButton.textContent = "تحديث البيانات";
-    refreshData();
-    refreshTimer = setInterval(refreshData, 15000);
-  }
-} catch {
-  localStorage.removeItem("mirah_connection");
-}
+refreshAll();
+setInterval(refreshAll, 15000);
