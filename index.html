@@ -2,17 +2,18 @@
 <!doctype html>
 <html lang="ar" dir="rtl">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#101827">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="مِرآة">
-<link rel="manifest" href="manifest.webmanifest">
-<link rel="apple-touch-icon" href="icon-192.png">
-<title>مِرآة MIR’AH</title>
-<link rel="stylesheet" href="style.css">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#07090f">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="مِرآة">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="icon-192.png">
+  <title>مِرآة MIR’AH</title>
+  <link rel="stylesheet" href="style.css">
 </head>
+
 <body>
 
 <header>
@@ -20,53 +21,85 @@
     <div class="logo">م</div>
     <div>
       <b>مِرآة</b>
-      <small>MIR’AH · مركز إدارة أجهزتك</small>
+      <small>MIR’AH · SMART CONTROL</small>
     </div>
   </div>
-  <span class="status"><i></i> جاهز</span>
+  <span class="status">● جاهز</span>
 </header>
 
 <main>
 
-  <section class="welcome">
-    <p class="eyebrow">MIR’AH CONTROL CENTER</p>
-    <h1>مرحبًا بك في مِرآة</h1>
-    <p>راقب وأدر جميع أجهزتك من مكان واحد.</p>
-  </section>
-
-  <!-- الواجهة الأولى: إضافة جهاز -->
+  <!-- الشاشة الأولى: إضافة جهاز -->
   <section class="page active" id="addPage">
+
+    <div class="welcome">
+      <p class="eyebrow">MIR’AH CONTROL CENTER</p>
+      <h1>مرحباً بك في مِرآة</h1>
+      <p>كل أجهزتك، تحت مراقبتك، من مكان واحد.</p>
+      <div class="hero-tag">✦ نظام مراقبة ذكي</div>
+    </div>
+
     <div class="section-head">
-      <h2>إضافة جهاز جديد</h2>
+      <div>
+        <p class="eyebrow">GET STARTED</p>
+        <h2>إضافة جهاز جديد</h2>
+      </div>
+      <span class="section-icon">＋</span>
     </div>
 
     <div class="notice">
       <b>اربط جهاز الكمبيوتر الخاص بك</b>
-      <p>أضف رابط Tailscale الخاص بالكمبيوتر لربطه بتطبيق مِرآة.</p>
+      <p>أدخل رابط Tailscale الخاص بجهازك لبدء المراقبة المباشرة.</p>
     </div>
 
-    <div class="device">
+    <div class="device add-device-card">
+      <div class="form-icon">⌘</div>
       <label for="deviceUrl">رابط الكمبيوتر</label>
       <input id="deviceUrl" type="url"
         placeholder="https://example.ts.net"
         autocomplete="url">
 
-      <label for="customDeviceName">اسم الجهاز</label>
+      <label for="customDeviceName">الاسم المخصص للجهاز</label>
       <input id="customDeviceName" type="text"
         placeholder="مثال: كمبيوتر المنزل">
 
-      <button id="add">＋ ربط جهاز</button>
+      <button id="add">＋ ربط جهاز جديد</button>
+
       <p class="hint" id="addMessage">
-        ستظهر أجهزتك بعد إتمام عملية الربط.
+        بيانات جهازك تبقى محفوظة على هذا الهاتف.
       </p>
     </div>
+
+    <div class="mini-info">
+      <span>◈</span>
+      <div>
+        <b>اتصال آمن</b>
+        <small>عبر شبكة Tailscale الخاصة بك</small>
+      </div>
+    </div>
+
   </section>
 
-  <!-- الواجهة الثانية: أجهزتي -->
+  <!-- الشاشة الثانية: الأجهزة -->
   <section class="page" id="devicesPage">
-    <div class="section-head">
+
+    <div class="page-heading">
+      <p class="eyebrow">YOUR DEVICES</p>
       <h2>أجهزتي</h2>
-      <span id="deviceCount">0 أجهزة</span>
+      <p>راقب حالة وأداء أجهزتك المتصلة.</p>
+    </div>
+
+    <div class="overview-card">
+      <div>
+        <small>إجمالي الأجهزة</small>
+        <strong id="deviceCount">0 أجهزة</strong>
+      </div>
+      <div class="overview-symbol">▣</div>
+    </div>
+
+    <div class="section-head">
+      <h3>قائمة الأجهزة</h3>
+      <span class="live-label">● LIVE</span>
     </div>
 
     <div id="devicesList">
@@ -79,31 +112,46 @@
           </div>
           <span class="offline">غير متصل</span>
         </div>
-
         <div class="metrics">
           <div><small>المعالج CPU</small><b>—</b></div>
           <div><small>الذاكرة RAM</small><b>—</b></div>
           <div><small>التخزين</small><b>—</b></div>
         </div>
-
         <p class="hint">ستظهر بيانات الجهاز بعد الربط.</p>
       </div>
     </div>
+
   </section>
 
-  <!-- الواجهة الثالثة: التنبيهات -->
+  <!-- الشاشة الثالثة: التنبيهات -->
   <section class="page" id="alertsPage">
+
+    <div class="page-heading">
+      <p class="eyebrow">SYSTEM NOTIFICATIONS</p>
+      <h2>التنبيهات</h2>
+      <p>تابع المشكلات والتنبيهات الخاصة بأجهزتك.</p>
+    </div>
+
+    <div class="overview-card alert-overview">
+      <div>
+        <small>التنبيهات الحالية</small>
+        <strong id="alertCount">0 تنبيهات</strong>
+      </div>
+      <div class="overview-symbol">♧</div>
+    </div>
+
     <div class="section-head">
-      <h2>التنبيهات والأخطاء</h2>
-      <span id="alertCount">0 تنبيهات</span>
+      <h3>آخر التنبيهات</h3>
+      <span class="live-label">MONITORING</span>
     </div>
 
     <div id="alertsList">
       <div class="notice">
-        <b>لا توجد تنبيهات حاليًا</b>
+        <b>كل الأجهزة بحالة جيدة</b>
         <p>ستظهر هنا مشاكل الأجهزة عند اكتشافها، مع اسم الجهاز وتفاصيل المشكلة.</p>
       </div>
     </div>
+
   </section>
 
 </main>
@@ -116,7 +164,7 @@
 
   <button class="nav-item" data-page="devicesPage">
     <span>▣</span>
-    <small>أجهزتي</small>
+    <small>الأجهزة</small>
   </button>
 
   <button class="nav-item" data-page="alertsPage">
@@ -125,7 +173,7 @@
   </button>
 </nav>
 
-<footer>مِرآة <span>•</span> تحكم أوضح بأجهزتك</footer>
+<footer>مِرآة MIR’AH · SMART DEVICE MONITORING</footer>
 
 <script src="app.js"></script>
 </body>
