@@ -19,6 +19,7 @@ const headerStatus = $("header .status");
 
 const STORAGE_KEY = "mirah_devices";
 const OLD_KEY = "mirah_connection";
+const HISTORY_LIMIT = 30;
 
 let devices = [];
 let alerts = [];
@@ -36,10 +37,7 @@ function saveDevices() {
 
 function loadDevices() {
   try {
-    const saved = JSON.parse(
-      localStorage.getItem(STORAGE_KEY) || "[]"
-    );
-
+    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
     if (Array.isArray(saved)) devices = saved;
   } catch {
     devices = [];
@@ -47,9 +45,7 @@ function loadDevices() {
 
   if (!devices.length) {
     try {
-      const old = JSON.parse(
-        localStorage.getItem(OLD_KEY) || "null"
-      );
+      const old = JSON.parse(localStorage.getItem(OLD_KEY) || "null");
 
       if (old?.url && old?.token) {
         devices.push({
@@ -58,11 +54,14 @@ function loadDevices() {
           id: old.url,
           name: "جهاز الكمبيوتر"
         });
-
         saveDevices();
       }
     } catch {}
   }
+
+  devices.forEach(device => {
+    device.history = [];
+  });
 }
 
 function showMessage(message) {
@@ -71,10 +70,8 @@ function showMessage(message) {
 
 function makeElement(tag, className, content) {
   const element = document.createElement(tag);
-
   if (className) element.className = className;
   if (content !== undefined) element.textContent = content;
-
   return element;
 }
 
@@ -83,9 +80,7 @@ function formatGB(value) {
 }
 
 function formatSpeed(value) {
-  return value == null
-    ? "غير متاح"
-    : Number(value).toFixed(2) + " Mbps";
+  return value == null ? "غير متاح" : Number(value).toFixed(2) + " Mbps";
 }
 
 function formatUptime(seconds) {
@@ -105,6 +100,134 @@ function getBatteryText(battery) {
     (battery.charging ? "⚡ يشحن" : "غير موصول بالشاحن");
 }
 
+function addHistory(device, data) {
+  if (!Array.isArray(device.history)) device.history = [];
+
+  const cpu = Number(data.cpuUsagePercent);
+  const ram = Number(data.memoryUsedPercent);
+
+  if (Number.isFinite(cpu)) {
+    device.history.push({
+      time: Date.now(),
+      cpu: Math.max(0, Math.min(100, cpu)),
+      ram: Number.isFinite(ram)
+        ? Math.max(0, Math.min(100, ram))
+        : null
+    });
+
+    device.history = device.history.slice(-HISTORY_LIMIT);
+  }
+}
+
+function drawChart(canvas, history, key, color) {
+  if (!canvas || !history?.length) return;
+
+  const width = Math.max(220, canvas.clientWidth);
+  const height = 115;
+  const ratio = window.devicePixelRatio || 1;
+
+  canvas.width = width * ratio;
+  canvas.height = height * ratio;
+
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+  ctx.clearRect(0, 0, width, height);
+
+  const left = 5;
+  const right = width - 5;
+  const top = 10;
+  const bottom = 88;
+  const chartWidth = right - left;
+  const chartHeight = bottom - top;
+
+  ctx.font = "10px Arial";
+  ctx.textAlign = "left";
+  ctx.fillStyle = "#858da2";
+
+  [0, 50, 100].forEach(value => {
+    const y = bottom - (value / 100) * chartHeight;
+
+    ctx.beginPath();
+    ctx.strokeStyle = "#293140";
+    ctx.lineWidth = 1;
+    ctx.moveTo(left, y);
+    ctx.lineTo(right, y);
+    ctx.stroke();
+
+    ctx.fillText(value + "%", left + 2, y - 4);
+  });
+
+  const points = history
+    .map((item, index) => ({
+      x: history.length === 1
+        ? right
+        : left + (index / (history.length - 1)) * chartWidth,
+      y: item[key] == null
+        ? null
+        : bottom - (item[key] / 100) * chartHeight
+    }))
+    .filter(point => point.y !== null);
+
+  if (!points.length) return;
+
+  if (points.length > 1) {
+    const gradient = ctx.createLinearGradient(0, top, 0, bottom);
+    gradient.addColorStop(0, color + "40");
+    gradient.addColorStop(1, color + "00");
+
+    ctx.beginPath();
+    points.forEach((point, index) => {
+      if (index === 0) ctx.moveTo(point.x, point.y);
+      else ctx.lineTo(point.x, point.y);
+    });
+    ctx.lineTo(points[points.length - 1].x, bottom);
+    ctx.lineTo(points[0].x, bottom);
+    ctx.closePath();
+    ctx.fillStyle = gradient;
+    ctx.fill();
+
+    ctx.beginPath();
+    points.forEach((point, index) => {
+      if (index === 0) ctx.moveTo(point.x, point.y);
+      else ctx.lineTo(point.x, point.y);
+    });
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2.5;
+    ctx.lineJoin = "round";
+    ctx.lineCap = "round";
+    ctx.stroke();
+  }
+
+  const last = points[points.length - 1];
+
+  ctx.beginPath();
+  ctx.arc(last.x, last.y, 4, 0, Math.PI * 2);
+  ctx.fillStyle = color;
+  ctx.fill();
+}
+
+function createChart(title, value, key, color, history) {
+  const box = makeElement("div", "performance-chart");
+
+  const heading = makeElement("div", "chart-heading");
+  heading.append(
+    makeElement("span", "chart-title", title),
+    makeElement("b", "chart-value", value == null ? "—" : value + "%")
+  );
+
+  const canvas = document.createElement("canvas");
+  canvas.className = "performance-canvas";
+  canvas.setAttribute("aria-label", title);
+
+  box.append(heading, canvas);
+
+  requestAnimationFrame(() => {
+    drawChart(canvas, history, key, color);
+  });
+
+  return box;
+}
+
 function getDeviceAlerts(device) {
   const result = [];
 
@@ -114,7 +237,6 @@ function getDeviceAlerts(device) {
       title: "الجهاز غير متصل",
       details: "تعذر الاتصال بهذا الجهاز."
     });
-
     return result;
   }
 
@@ -125,8 +247,7 @@ function getDeviceAlerts(device) {
     result.push({
       level: "warning",
       title: "استخدام المعالج مرتفع",
-      details: "استخدام CPU وصل إلى " +
-        data.cpuUsagePercent + "%."
+      details: "استخدام CPU وصل إلى " + data.cpuUsagePercent + "%."
     });
   }
 
@@ -134,8 +255,7 @@ function getDeviceAlerts(device) {
     result.push({
       level: "warning",
       title: "استهلاك الذاكرة مرتفع",
-      details: "استخدام RAM وصل إلى " +
-        data.memoryUsedPercent + "%."
+      details: "استخدام RAM وصل إلى " + data.memoryUsedPercent + "%."
     });
   }
 
@@ -144,8 +264,7 @@ function getDeviceAlerts(device) {
       result.push({
         level: "warning",
         title: "مساحة التخزين شبه ممتلئة",
-        details: disk.name + " مستخدم بنسبة " +
-          disk.usedPercent + "%."
+        details: disk.name + " مستخدم بنسبة " + disk.usedPercent + "%."
       });
     }
   }
@@ -156,8 +275,7 @@ function getDeviceAlerts(device) {
     result.push({
       level: "warning",
       title: "مستوى البطارية منخفض",
-      details: "البطارية وصلت إلى " +
-        data.battery.percent + "%."
+      details: "البطارية وصلت إلى " + data.battery.percent + "%."
     });
   }
 
@@ -166,17 +284,14 @@ function getDeviceAlerts(device) {
 
 function renderDevices() {
   devicesList.replaceChildren();
-
   deviceCount.textContent = devices.length + " أجهزة";
 
   if (!devices.length) {
     const empty = makeElement("div", "notice");
-
     empty.append(
       makeElement("b", "", "لا توجد أجهزة مربوطة"),
       makeElement("p", "", "انتقل إلى واجهة إضافة جهاز لربط أول كمبيوتر.")
     );
-
     devicesList.append(empty);
     return;
   }
@@ -188,22 +303,19 @@ function renderDevices() {
     top.append(makeElement("div", "pc-icon", "▣"));
 
     const nameBox = makeElement("div", "device-name");
-
     nameBox.append(
       makeElement("b", "", device.name),
-      makeElement("small", "",
-        device.data?.deviceName || device.url)
+      makeElement("small", "", device.data?.deviceName || device.url)
     );
 
     top.append(nameBox);
 
-    const badge = makeElement(
+    top.append(makeElement(
       "span",
       device.online ? "online" : "offline",
       device.online ? "متصل" : "غير متصل"
-    );
+    ));
 
-    top.append(badge);
     card.append(top);
 
     if (device.data) {
@@ -221,109 +333,76 @@ function renderDevices() {
       const metrics = makeElement("div", "metrics");
 
       const values = [
-        [
-          "استخدام المعالج CPU",
-          data.cpuUsagePercent == null
-            ? "جارٍ القياس"
-            : data.cpuUsagePercent + "%"
-        ],
-        [
-          "طراز المعالج",
-          data.processor || "غير معروف"
-        ],
-        [
-          "عدد الأنوية",
-          data.processorCount ?? "غير متاح"
-        ],
-        [
-          "استخدام الذاكرة RAM",
-          data.memoryUsedPercent + "%"
-        ],
-        [
-          "الذاكرة المستخدمة",
-          formatGB(
-            (data.memoryTotalGb || 0) -
-            (data.memoryAvailableGb || 0)
-          )
-        ],
-        [
-          "الذاكرة المتاحة",
-          formatGB(data.memoryAvailableGb || 0)
-        ],
-        [
-          "التخزين المستخدم",
-          disks.length
-            ? formatGB(used) + " / " + formatGB(total)
-            : "غير متاح"
-        ],
-        [
-          "تنزيل الشبكة",
-          formatSpeed(data.networkDownloadMbps)
-        ],
-        [
-          "رفع الشبكة",
-          formatSpeed(data.networkUploadMbps)
-        ],
-        [
-          "مدة تشغيل الكمبيوتر",
-          formatUptime(data.uptimeSeconds)
-        ],
-        [
-          "العمليات الجارية",
-          data.processCount ?? "غير متاح"
-        ],
-        [
-          "البطارية",
-          getBatteryText(data.battery)
-        ],
-        [
-          "نظام التشغيل",
-          data.os || "غير معروف"
-        ]
+        ["استخدام المعالج CPU", data.cpuUsagePercent == null ? "جارٍ القياس" : data.cpuUsagePercent + "%"],
+        ["طراز المعالج", data.processor || "غير معروف"],
+        ["عدد الأنوية", data.processorCount ?? "غير متاح"],
+        ["استخدام الذاكرة RAM", data.memoryUsedPercent + "%"],
+        ["الذاكرة المستخدمة", formatGB((data.memoryTotalGb || 0) - (data.memoryAvailableGb || 0))],
+        ["الذاكرة المتاحة", formatGB(data.memoryAvailableGb || 0)],
+        ["التخزين المستخدم", disks.length ? formatGB(used) + " / " + formatGB(total) : "غير متاح"],
+        ["تنزيل الشبكة", formatSpeed(data.networkDownloadMbps)],
+        ["رفع الشبكة", formatSpeed(data.networkUploadMbps)],
+        ["مدة تشغيل الكمبيوتر", formatUptime(data.uptimeSeconds)],
+        ["العمليات الجارية", data.processCount ?? "غير متاح"],
+        ["البطارية", getBatteryText(data.battery)],
+        ["نظام التشغيل", data.os || "غير معروف"]
       ];
 
       values.forEach(([label, value]) => {
         const box = makeElement("div", "metric-item");
-
         box.append(
           makeElement("small", "", label),
           makeElement("b", "", String(value))
         );
-
         metrics.append(box);
       });
 
       card.append(metrics);
+
+      const charts = makeElement("div", "charts-section");
+      charts.append(
+        makeElement("h3", "charts-title", "تحليل الأداء المباشر"),
+        makeElement("p", "charts-subtitle", "آخر 30 قراءة · تحديث كل 15 ثانية")
+      );
+
+      const chartGrid = makeElement("div", "charts-grid");
+
+      chartGrid.append(
+        createChart(
+          "المعالج CPU",
+          data.cpuUsagePercent,
+          "cpu",
+          "#20e6cf",
+          device.history
+        ),
+        createChart(
+          "الذاكرة RAM",
+          data.memoryUsedPercent,
+          "ram",
+          "#a78bfa",
+          device.history
+        )
+      );
+
+      charts.append(chartGrid);
+      card.append(charts);
     }
 
-    const info = makeElement(
+    card.append(makeElement(
       "p",
       "hint",
       device.online
-        ? "آخر تحديث: " +
-          new Date(device.lastSeen).toLocaleTimeString("ar-SA")
+        ? "آخر تحديث: " + new Date(device.lastSeen).toLocaleTimeString("ar-SA")
         : "تأكد من تشغيل الكمبيوتر وTailscale."
-    );
-
-    card.append(info);
+    ));
 
     const actions = makeElement("div", "device-actions");
 
-    const renameButton = makeElement(
-      "button", "secondary-action", "تغيير الاسم"
-    );
+    const renameButton = makeElement("button", "secondary-action", "تغيير الاسم");
+    renameButton.addEventListener("click", () => renameDevice(index));
 
-    renameButton.addEventListener(
-      "click", () => renameDevice(index)
-    );
-
-    const deleteButton = makeElement(
-      "button", "delete-action", "حذف الجهاز"
-    );
-
-    deleteButton.addEventListener(
-      "click", () => deleteDevice(index)
-    );
+    const deleteButton = makeElement("button", "delete-action", "حذف الجهاز");
+    deleteButton.addEventListener("click", () => deleteDevice(index));
 
     actions.append(renameButton, deleteButton);
     card.append(actions);
@@ -336,15 +415,10 @@ function renameDevice(index) {
   const device = devices[index];
   if (!device) return;
 
-  const newName = prompt(
-    "اكتب الاسم الجديد للجهاز:",
-    device.name
-  );
-
+  const newName = prompt("اكتب الاسم الجديد للجهاز:", device.name);
   if (!newName || !newName.trim()) return;
 
   device.name = newName.trim();
-
   saveDevices();
   renderDevices();
 }
@@ -353,12 +427,9 @@ function deleteDevice(index) {
   const device = devices[index];
   if (!device) return;
 
-  if (!confirm("هل تريد حذف " + device.name + " من التطبيق؟")) {
-    return;
-  }
+  if (!confirm("هل تريد حذف " + device.name + " من التطبيق؟")) return;
 
   devices.splice(index, 1);
-
   saveDevices();
   renderDevices();
   renderAlerts();
@@ -379,29 +450,21 @@ function renderAlerts() {
 
   if (!alerts.length) {
     const empty = makeElement("div", "notice");
-
     empty.append(
       makeElement("b", "", "كل الأجهزة بحالة جيدة"),
       makeElement("p", "", "لا توجد مشاكل مكتشفة حاليًا.")
     );
-
     alertsList.append(empty);
     return;
   }
 
   alerts.forEach(alert => {
-    const card = makeElement(
-      "div",
-      "alert-card " + alert.level
-    );
-
+    const card = makeElement("div", "alert-card " + alert.level);
     card.append(
       makeElement("b", "", alert.title),
-      makeElement("div", "alert-device",
-        "الجهاز: " + alert.deviceName),
+      makeElement("div", "alert-device", "الجهاز: " + alert.deviceName),
       makeElement("p", "", alert.details)
     );
-
     alertsList.append(card);
   });
 }
@@ -419,22 +482,20 @@ async function refreshDevice(device) {
     const response = await fetch(
       device.url + "/api/status",
       {
-        headers: {
-          "X-Mirah-Token": device.token
-        },
+        headers: { "X-Mirah-Token": device.token },
         cache: "no-store"
       }
     );
 
-    if (!response.ok) {
-      throw new Error("Connection failed");
-    }
+    if (!response.ok) throw new Error("Connection failed");
 
     const data = await response.json();
 
     device.data = data;
     device.online = true;
     device.lastSeen = Date.now();
+
+    addHistory(device, data);
 
   } catch {
     device.online = false;
@@ -481,34 +542,25 @@ async function pairDevice() {
   showMessage("جارٍ الاتصال بالكمبيوتر...");
 
   try {
-    const response = await fetch(
-      url + "/api/pairing",
-      { cache: "no-store" }
-    );
+    const response = await fetch(url + "/api/pairing", { cache: "no-store" });
 
-    if (!response.ok) {
-      throw new Error("تعذر الوصول للكمبيوتر");
-    }
+    if (!response.ok) throw new Error("تعذر الوصول للكمبيوتر");
 
     const pairing = await response.json();
-
-    if (!pairing.token) {
-      throw new Error("بيانات الربط غير مكتملة");
-    }
+    if (!pairing.token) throw new Error("بيانات الربط غير مكتملة");
 
     const device = {
       url,
       token: pairing.token,
       id: pairing.id || url,
-      name: nameInput.value.trim() ||
-        pairing.name || "جهاز جديد",
+      name: nameInput.value.trim() || pairing.name || "جهاز جديد",
       online: false,
       data: null,
-      lastSeen: null
+      lastSeen: null,
+      history: []
     };
 
     devices.push(device);
-
     await refreshDevice(device);
 
     if (!device.online) {
@@ -517,16 +569,13 @@ async function pairDevice() {
     }
 
     saveDevices();
-
     urlInput.value = "";
     nameInput.value = "";
-
     showMessage("تم ربط الجهاز بنجاح.");
 
     renderDevices();
     renderAlerts();
     updateHeader();
-
     showPage("devicesPage");
 
   } catch (error) {
@@ -544,17 +593,39 @@ function showPage(pageId) {
   });
 
   document.querySelectorAll(".nav-item").forEach(button => {
-    button.classList.toggle(
-      "active",
-      button.dataset.page === pageId
-    );
+    button.classList.toggle("active", button.dataset.page === pageId);
   });
+
+  if (pageId === "devicesPage") {
+    requestAnimationFrame(() => {
+      devicesList.querySelectorAll(".performance-canvas").forEach(canvas => {
+        const deviceCard = canvas.closest(".device");
+        const index = [...devicesList.children].indexOf(deviceCard);
+        const device = devices[index];
+        if (!device) return;
+
+        const isCpu = canvas.closest(".performance-chart")
+          .querySelector(".chart-title").textContent.includes("CPU");
+
+        drawChart(
+          canvas,
+          device.history,
+          isCpu ? "cpu" : "ram",
+          isCpu ? "#20e6cf" : "#a78bfa"
+        );
+      });
+    });
+  }
 }
 
 document.querySelectorAll(".nav-item").forEach(button => {
-  button.addEventListener("click", () => {
-    showPage(button.dataset.page);
-  });
+  button.addEventListener("click", () => showPage(button.dataset.page));
+});
+
+window.addEventListener("resize", () => {
+  if ($("#devicesPage")?.classList.contains("active")) {
+    renderDevices();
+  }
 });
 
 addButton.addEventListener("click", pairDevice);
