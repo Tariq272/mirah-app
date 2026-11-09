@@ -14,45 +14,119 @@
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
+
 <header>
   <div class="brand">
     <div class="logo">م</div>
-    <div><b>مِرآة</b><small>MIR’AH · مراقبة أجهزتك</small></div>
+    <div>
+      <b>مِرآة</b>
+      <small>MIR’AH · مركز إدارة أجهزتك</small>
+    </div>
   </div>
-  <span class="status"><i></i> بانتظار الاتصال</span>
+  <span class="status"><i></i> جاهز</span>
 </header>
+
 <main>
+
   <section class="welcome">
-    <p class="eyebrow">لوحة التحكم</p>
+    <p class="eyebrow">MIR’AH CONTROL CENTER</p>
     <h1>مرحبًا بك في مِرآة</h1>
-    <p>راقب أجهزة الكمبيوتر الخاصة بك من مكان واحد.</p>
+    <p>راقب وأدر جميع أجهزتك من مكان واحد.</p>
   </section>
-  <section class="notice">
-    <b>ربط الكمبيوتر</b>
-    <p>اربط جهاز الكمبيوتر لعرض بياناته ومراقبته.</p>
-  </section>
-  <section class="section-head">
-    <h2>أجهزتي</h2>
-    <button id="add">＋ ربط جهاز</button>
-  </section>
-  <div class="device">
-    <div class="device-top">
-      <div class="pc-icon">▣</div>
-      <div class="device-name"><b>جهاز الكمبيوتر</b><small>بانتظار الربط</small></div>
-      <span class="offline">غير متصل</span>
+
+  <!-- الواجهة الأولى: إضافة جهاز -->
+  <section class="page active" id="addPage">
+    <div class="section-head">
+      <h2>إضافة جهاز جديد</h2>
     </div>
-    <div class="metrics">
-      <div><small>المعالج CPU</small><b>—</b></div>
-      <div><small>الذاكرة RAM</small><b>—</b></div>
-      <div><small>التخزين</small><b>—</b></div>
+
+    <div class="notice">
+      <b>اربط جهاز الكمبيوتر الخاص بك</b>
+      <p>أضف رابط Tailscale الخاص بالكمبيوتر لربطه بتطبيق مِرآة.</p>
     </div>
-    <p class="hint">ستظهر بيانات الجهاز هنا بعد إتمام الربط.</p>
-  </div>
-  <section class="section-head"><h2>حول مِرآة</h2></section>
-  <p class="foot">إصدار تجريبي أولي · MIR’AH</p>
+
+    <div class="device">
+      <label for="deviceUrl">رابط الكمبيوتر</label>
+      <input id="deviceUrl" type="url"
+        placeholder="https://example.ts.net"
+        autocomplete="url">
+
+      <label for="customDeviceName">اسم الجهاز</label>
+      <input id="customDeviceName" type="text"
+        placeholder="مثال: كمبيوتر المنزل">
+
+      <button id="add">＋ ربط جهاز</button>
+      <p class="hint" id="addMessage">
+        ستظهر أجهزتك بعد إتمام عملية الربط.
+      </p>
+    </div>
+  </section>
+
+  <!-- الواجهة الثانية: أجهزتي -->
+  <section class="page" id="devicesPage">
+    <div class="section-head">
+      <h2>أجهزتي</h2>
+      <span id="deviceCount">0 أجهزة</span>
+    </div>
+
+    <div id="devicesList">
+      <div class="device">
+        <div class="device-top">
+          <div class="pc-icon">▣</div>
+          <div class="device-name">
+            <b>جهاز الكمبيوتر</b>
+            <small>بانتظار الربط</small>
+          </div>
+          <span class="offline">غير متصل</span>
+        </div>
+
+        <div class="metrics">
+          <div><small>المعالج CPU</small><b>—</b></div>
+          <div><small>الذاكرة RAM</small><b>—</b></div>
+          <div><small>التخزين</small><b>—</b></div>
+        </div>
+
+        <p class="hint">ستظهر بيانات الجهاز بعد الربط.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- الواجهة الثالثة: التنبيهات -->
+  <section class="page" id="alertsPage">
+    <div class="section-head">
+      <h2>التنبيهات والأخطاء</h2>
+      <span id="alertCount">0 تنبيهات</span>
+    </div>
+
+    <div id="alertsList">
+      <div class="notice">
+        <b>لا توجد تنبيهات حاليًا</b>
+        <p>ستظهر هنا مشاكل الأجهزة عند اكتشافها، مع اسم الجهاز وتفاصيل المشكلة.</p>
+      </div>
+    </div>
+  </section>
+
 </main>
+
+<nav class="bottom-nav">
+  <button class="nav-item active" data-page="addPage">
+    <span>＋</span>
+    <small>إضافة</small>
+  </button>
+
+  <button class="nav-item" data-page="devicesPage">
+    <span>▣</span>
+    <small>أجهزتي</small>
+  </button>
+
+  <button class="nav-item" data-page="alertsPage">
+    <span>♧</span>
+    <small>التنبيهات</small>
+  </button>
+</nav>
+
 <footer>مِرآة <span>•</span> تحكم أوضح بأجهزتك</footer>
+
 <script src="app.js"></script>
 </body>
 </html>
-
