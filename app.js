@@ -5,7 +5,7 @@ if ("serviceWorker" in navigator) {
   });
 }
 
-const $ = (selector) => document.querySelector(selector);
+const $ = selector => document.querySelector(selector);
 
 const addButton = $("#add");
 const urlInput = $("#deviceUrl");
@@ -24,11 +24,14 @@ let devices = [];
 let alerts = [];
 
 function saveDevices() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(
-    devices.map(({ url, token, id, name }) => ({
-      url, token, id, name
-    }))
-  ));
+  localStorage.setItem(
+    STORAGE_KEY,
+    JSON.stringify(
+      devices.map(({ url, token, id, name }) => ({
+        url, token, id, name
+      }))
+    )
+  );
 }
 
 function loadDevices() {
@@ -42,7 +45,6 @@ function loadDevices() {
     devices = [];
   }
 
-  // ترحيل الجهاز القديم تلقائياً
   if (!devices.length) {
     try {
       const old = JSON.parse(
@@ -56,6 +58,7 @@ function loadDevices() {
           id: old.url,
           name: "جهاز الكمبيوتر"
         });
+
         saveDevices();
       }
     } catch {}
@@ -68,13 +71,38 @@ function showMessage(message) {
 
 function makeElement(tag, className, content) {
   const element = document.createElement(tag);
+
   if (className) element.className = className;
   if (content !== undefined) element.textContent = content;
+
   return element;
 }
 
 function formatGB(value) {
   return Number(value).toFixed(1) + " GB";
+}
+
+function formatSpeed(value) {
+  return value == null
+    ? "غير متاح"
+    : Number(value).toFixed(2) + " Mbps";
+}
+
+function formatUptime(seconds) {
+  if (seconds == null) return "غير متاح";
+
+  const days = Math.floor(seconds / 86400);
+  const hours = Math.floor((seconds % 86400) / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+
+  return `${days} يوم، ${hours} ساعة، ${minutes} دقيقة`;
+}
+
+function getBatteryText(battery) {
+  if (!battery?.available) return "غير متاحة";
+
+  return battery.percent + "% " +
+    (battery.charging ? "⚡ يشحن" : "غير موصول بالشاحن");
 }
 
 function getDeviceAlerts(device) {
@@ -86,11 +114,21 @@ function getDeviceAlerts(device) {
       title: "الجهاز غير متصل",
       details: "تعذر الاتصال بهذا الجهاز."
     });
+
     return result;
   }
 
   const data = device.data;
   if (!data) return result;
+
+  if (Number(data.cpuUsagePercent) >= 90) {
+    result.push({
+      level: "warning",
+      title: "استخدام المعالج مرتفع",
+      details: "استخدام CPU وصل إلى " +
+        data.cpuUsagePercent + "%."
+    });
+  }
 
   if (Number(data.memoryUsedPercent) >= 90) {
     result.push({
@@ -112,6 +150,17 @@ function getDeviceAlerts(device) {
     }
   }
 
+  if (data.battery?.available &&
+      Number(data.battery.percent) <= 15 &&
+      !data.battery.charging) {
+    result.push({
+      level: "warning",
+      title: "مستوى البطارية منخفض",
+      details: "البطارية وصلت إلى " +
+        data.battery.percent + "%."
+    });
+  }
+
   return result;
 }
 
@@ -122,10 +171,12 @@ function renderDevices() {
 
   if (!devices.length) {
     const empty = makeElement("div", "notice");
+
     empty.append(
       makeElement("b", "", "لا توجد أجهزة مربوطة"),
       makeElement("p", "", "انتقل إلى واجهة إضافة جهاز لربط أول كمبيوتر.")
     );
+
     devicesList.append(empty);
     return;
   }
@@ -134,11 +185,10 @@ function renderDevices() {
     const card = makeElement("div", "device");
     const top = makeElement("div", "device-top");
 
-    top.append(
-      makeElement("div", "pc-icon", "▣")
-    );
+    top.append(makeElement("div", "pc-icon", "▣"));
 
     const nameBox = makeElement("div", "device-name");
+
     nameBox.append(
       makeElement("b", "", device.name),
       makeElement("small", "",
@@ -159,25 +209,87 @@ function renderDevices() {
     if (device.data) {
       const data = device.data;
       const disks = data.disks || [];
-      const total = disks.reduce((sum, d) => sum + d.totalGb, 0);
-      const used = disks.reduce((sum, d) => sum + d.usedGb, 0);
+
+      const total = disks.reduce(
+        (sum, disk) => sum + Number(disk.totalGb || 0), 0
+      );
+
+      const used = disks.reduce(
+        (sum, disk) => sum + Number(disk.usedGb || 0), 0
+      );
 
       const metrics = makeElement("div", "metrics");
 
       const values = [
-        ["المعالج", data.processor || "غير معروف"],
-        ["الذاكرة RAM", data.memoryUsedPercent + "%"],
-        ["التخزين", disks.length
-          ? formatGB(used) + " / " + formatGB(total)
-          : "غير متاح"]
+        [
+          "استخدام المعالج CPU",
+          data.cpuUsagePercent == null
+            ? "جارٍ القياس"
+            : data.cpuUsagePercent + "%"
+        ],
+        [
+          "طراز المعالج",
+          data.processor || "غير معروف"
+        ],
+        [
+          "عدد الأنوية",
+          data.processorCount ?? "غير متاح"
+        ],
+        [
+          "استخدام الذاكرة RAM",
+          data.memoryUsedPercent + "%"
+        ],
+        [
+          "الذاكرة المستخدمة",
+          formatGB(
+            (data.memoryTotalGb || 0) -
+            (data.memoryAvailableGb || 0)
+          )
+        ],
+        [
+          "الذاكرة المتاحة",
+          formatGB(data.memoryAvailableGb || 0)
+        ],
+        [
+          "التخزين المستخدم",
+          disks.length
+            ? formatGB(used) + " / " + formatGB(total)
+            : "غير متاح"
+        ],
+        [
+          "تنزيل الشبكة",
+          formatSpeed(data.networkDownloadMbps)
+        ],
+        [
+          "رفع الشبكة",
+          formatSpeed(data.networkUploadMbps)
+        ],
+        [
+          "مدة تشغيل الكمبيوتر",
+          formatUptime(data.uptimeSeconds)
+        ],
+        [
+          "العمليات الجارية",
+          data.processCount ?? "غير متاح"
+        ],
+        [
+          "البطارية",
+          getBatteryText(data.battery)
+        ],
+        [
+          "نظام التشغيل",
+          data.os || "غير معروف"
+        ]
       ];
 
       values.forEach(([label, value]) => {
-        const box = makeElement("div");
+        const box = makeElement("div", "metric-item");
+
         box.append(
           makeElement("small", "", label),
-          makeElement("b", "", value)
+          makeElement("b", "", String(value))
         );
+
         metrics.append(box);
       });
 
@@ -197,11 +309,21 @@ function renderDevices() {
 
     const actions = makeElement("div", "device-actions");
 
-    const renameButton = makeElement("button", "secondary-action", "تغيير الاسم");
-    renameButton.addEventListener("click", () => renameDevice(index));
+    const renameButton = makeElement(
+      "button", "secondary-action", "تغيير الاسم"
+    );
 
-    const deleteButton = makeElement("button", "delete-action", "حذف الجهاز");
-    deleteButton.addEventListener("click", () => deleteDevice(index));
+    renameButton.addEventListener(
+      "click", () => renameDevice(index)
+    );
+
+    const deleteButton = makeElement(
+      "button", "delete-action", "حذف الجهاز"
+    );
+
+    deleteButton.addEventListener(
+      "click", () => deleteDevice(index)
+    );
 
     actions.append(renameButton, deleteButton);
     card.append(actions);
@@ -214,11 +336,15 @@ function renameDevice(index) {
   const device = devices[index];
   if (!device) return;
 
-  const newName = prompt("اكتب الاسم الجديد للجهاز:", device.name);
+  const newName = prompt(
+    "اكتب الاسم الجديد للجهاز:",
+    device.name
+  );
 
   if (!newName || !newName.trim()) return;
 
   device.name = newName.trim();
+
   saveDevices();
   renderDevices();
 }
@@ -232,6 +358,7 @@ function deleteDevice(index) {
   }
 
   devices.splice(index, 1);
+
   saveDevices();
   renderDevices();
   renderAlerts();
@@ -252,10 +379,12 @@ function renderAlerts() {
 
   if (!alerts.length) {
     const empty = makeElement("div", "notice");
+
     empty.append(
       makeElement("b", "", "كل الأجهزة بحالة جيدة"),
       makeElement("p", "", "لا توجد مشاكل مكتشفة حاليًا.")
     );
+
     alertsList.append(empty);
     return;
   }
@@ -268,7 +397,8 @@ function renderAlerts() {
 
     card.append(
       makeElement("b", "", alert.title),
-      makeElement("div", "alert-device", "الجهاز: " + alert.deviceName),
+      makeElement("div", "alert-device",
+        "الجهاز: " + alert.deviceName),
       makeElement("p", "", alert.details)
     );
 
@@ -289,12 +419,16 @@ async function refreshDevice(device) {
     const response = await fetch(
       device.url + "/api/status",
       {
-        headers: { "X-Mirah-Token": device.token },
+        headers: {
+          "X-Mirah-Token": device.token
+        },
         cache: "no-store"
       }
     );
 
-    if (!response.ok) throw new Error("Connection failed");
+    if (!response.ok) {
+      throw new Error("Connection failed");
+    }
 
     const data = await response.json();
 
@@ -352,7 +486,9 @@ async function pairDevice() {
       { cache: "no-store" }
     );
 
-    if (!response.ok) throw new Error("تعذر الوصول للكمبيوتر");
+    if (!response.ok) {
+      throw new Error("تعذر الوصول للكمبيوتر");
+    }
 
     const pairing = await response.json();
 
@@ -386,6 +522,7 @@ async function pairDevice() {
     nameInput.value = "";
 
     showMessage("تم ربط الجهاز بنجاح.");
+
     renderDevices();
     renderAlerts();
     updateHeader();
@@ -394,6 +531,7 @@ async function pairDevice() {
 
   } catch (error) {
     showMessage("فشل الربط: " + error.message);
+
   } finally {
     addButton.disabled = false;
     addButton.textContent = "＋ ربط جهاز";
